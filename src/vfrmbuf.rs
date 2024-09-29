@@ -44,29 +44,6 @@ impl Vfb {
         //uioをオープン
         //let dev_name = Vfb::check_vfrmbuf_uio_num(uio_name)?;
         let uio = Uio::new(&uio_name,PAGE_SIZE)?;
-        // let filename = format!("/dev/{}", dev_name);
-        // let c_filename = CString::new(filename).unwrap();
-
-        // let fd = unsafe { open(c_filename.as_ptr(), O_RDWR) };
-        // if fd < 0 {
-        //     return Err(anyhow::Error::from(std::io::Error::last_os_error()));
-        // }
-
-        // let mem = unsafe {
-        //     mmap(
-        //         ptr::null_mut(),
-        //         PAGE_SIZE,
-        //         PROT_READ | PROT_WRITE,
-        //         MAP_SHARED,
-        //         fd,
-        //         0,
-        //     )
-        // };
-
-        // if mem == libc::MAP_FAILED {
-        //     unsafe { close(fd) };
-        //     return Err(anyhow::Error::from(std::io::Error::last_os_error()));
-        // }
 
         //u-dma-bufferをオープン
         let mut udmabuf = Udma::new(udmabuf_name)?;
@@ -81,60 +58,20 @@ impl Vfb {
         
         //Vfb::open(name)
     }
-    /// デバイスをオープンしてメモリをマッピング
-    // pub fn open(name: &str) -> io::Result<Self> {
-    //     let dev_name = Vfb::check_vfrmbuf_uio_num(name)?;
-    //     let filename = format!("/dev/{}", dev_name);
-    //     let c_filename = CString::new(filename).unwrap();
-
-    //     let fd = unsafe { open(c_filename.as_ptr(), O_RDWR) };
-    //     if fd < 0 {
-    //         return Err(io::Error::last_os_error());
-    //     }
-
-    //     let mem = unsafe {
-    //         mmap(
-    //             ptr::null_mut(),
-    //             PAGE_SIZE,
-    //             PROT_READ | PROT_WRITE,
-    //             MAP_SHARED,
-    //             fd,
-    //             0,
-    //         )
-    //     };
-
-    //     if mem == libc::MAP_FAILED {
-    //         unsafe { close(fd) };
-    //         return Err(io::Error::last_os_error());
-    //     }
-
-    //     Ok(Vfb {
-    //         fd,
-    //         mem: mem as *mut u32,
-    //     })
-    // }
 
     /// メモリとファイルディスクリプタをクローズ
     pub fn close(&self) {
-        // unsafe {
-        //     munmap(self.mem as *mut libc::c_void, PAGE_SIZE);
-        //     libc::close(self.fd);
-        // }
         self.uio.close();
         self.buf.close();
     }
 
     /// メモリに値を書き込み
     fn write_mem32(&self, addr: usize, val: u32) {
-        // unsafe {
-        //     ptr::write_volatile(self.mem.add(addr / 4), val);
-        // }
         self.uio.write_mem32(addr,val);
     }
 
     /// メモリから値を読み取り
     fn read_mem32(&self, addr: usize) -> u32 {
-        // unsafe { ptr::read_volatile(self.mem.add(addr / 4)) }
         self.uio.read_mem32(addr)
     }
 
@@ -162,9 +99,6 @@ impl Vfb {
     
 
     /// 物理アドレスを設定
-    // pub fn set_phys_addr(&self, udmabuf_phys_addr: u32) {
-    //     self.write_mem32(FRMBUF_P1BUFFER, udmabuf_phys_addr);
-    // }
     pub fn set_phys_addr(&self) {
         self.write_mem32(FRMBUF_P1BUFFER, self.buf.phys_addr);
     }

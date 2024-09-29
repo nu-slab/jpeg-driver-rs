@@ -45,29 +45,6 @@ impl Adma {
         //uioをオープン
         //let dev_name = Adma::check_axi_dma_uio_num(uio_name)?;
         let uio = Uio::new(&uio_name,PAGE_SIZE)?;
-        // let filename = format!("/dev/{}", dev_name);
-        // let c_filename = CString::new(filename).unwrap();
-
-        // let fd = unsafe { open(c_filename.as_ptr(), O_RDWR) };
-        // if fd < 0 {
-        //     return Err(anyhow::Error::from(std::io::Error::last_os_error()));
-        // }
-
-        // let mem = unsafe {
-        //     mmap(
-        //         ptr::null_mut(),
-        //         PAGE_SIZE,
-        //         PROT_READ | PROT_WRITE,
-        //         MAP_SHARED,
-        //         fd,
-        //         0,
-        //     )
-        // };
-
-        // if mem == libc::MAP_FAILED {
-        //     unsafe { close(fd) };
-        //     return Err(anyhow::Error::from(std::io::Error::last_os_error()));
-        // }
 
         //u-dma-bufferをオープン
         let mut udmabuf = Udma::new(udmabuf_name)?;
@@ -79,52 +56,17 @@ impl Adma {
             buf: udmabuf
         })
         
-        //Adma::open(name)
     }
     
-    // pub fn open(name: &str) -> io::Result<Self> {
-    //     let dev_name = Adma::check_axi_dma_uio_num(name)?;
-    //     let filename = format!("/dev/{}", dev_name);
-    //     let c_filename = CString::new(filename).unwrap();
 
-    //     let fd = unsafe { open(c_filename.as_ptr(), O_RDWR) };
-    //     if fd < 0 {
-    //         return Err(io::Error::last_os_error());
-    //     }
-
-    //     let mem = unsafe {
-    //         mmap(
-    //             ptr::null_mut(),
-    //             PAGE_SIZE,
-    //             PROT_READ | PROT_WRITE,
-    //             MAP_SHARED,
-    //             fd,
-    //             0,
-    //         )
-    //     };
-
-    //     if mem == libc::MAP_FAILED {
-    //         unsafe { close(fd) };
-    //         return Err(io::Error::last_os_error());
-    //     }
-
-    //     Ok(Adma { fd, mem: mem as *mut u32 })
-    // }
 
     pub fn close(&self) {
-        // unsafe {
-        //     munmap(self.mem as *mut libc::c_void, PAGE_SIZE);
-        //     close(self.fd);
-        // }
         self.buf.close();
         self.uio.close();
         
     }
 
     pub fn write_mem32(&self, addr: usize, val: u32) {
-        // unsafe {
-        //     ptr::write_volatile(self.mem.add(addr / 4), val);
-        // }
         self.uio.write_mem32(addr,val);
     }
 

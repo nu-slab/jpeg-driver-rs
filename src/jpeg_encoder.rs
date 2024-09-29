@@ -31,8 +31,7 @@ impl JpegEncoder{
             &hw_json,
             jpeg_hier,
             "jpeg_encoder"
-        )?;
-            
+        )?;            
         let uio_obj = json_as_map!(hw_json[jpeg_uio_name]);
         let uio_name = json_as_str!(uio_obj["uio"]);     
         
@@ -75,13 +74,19 @@ impl JpegEncoder{
     pub fn encode(&mut self,img_data: &[u8]) -> Result<Vec<u8>>{
         //self.vfrmbuf.buf.write_to_buf(&img_data).unwrap();
 
+        //dma をスタート
         self.adma.start()?;
+        //画像データ書き込み開始
         self.vfrmbuf.start(&img_data)?;
+        //エンコードデータ読み込みスタート
         self.adma.set_s2mm_length(0x200000);
 
+        //完了するまで待ち
         while !self.adma.is_idle(){}
 
-        let len = self.uio.read_mem32(0x10) as usize;
+        //エンコードデータのサイズを取得
+        let len = self.uio.read_mem32(0x04) as usize;        
+        
         
         Ok(self.adma.buf.read_from_buf(len).unwrap())
 
@@ -89,36 +94,28 @@ impl JpegEncoder{
 
 
     pub fn encode_file(&mut self,img_data: &[u8],o_file_name:&str)->Result<()>{
-        //self.vfrmbuf.buf.write_to_buf(&img_data).unwrap();
 
+        //dma をスタート
         self.adma.start()?;
+        //画像データ書き込み開始
         self.vfrmbuf.start(&img_data)?;
+        //エンコードデータ読み込みスタート
         self.adma.set_s2mm_length(0x200000);
 
+        //完了するまで待ち
         while !self.adma.is_idle(){}
 
-        let len = self.uio.read_mem32(0x04) as usize;
-        println!("len:{}",len);
+        //エンコードデータのサイズを取得
+        let len = self.uio.read_mem32(0x04) as usize;        
         let out = self.adma.buf.read_from_buf(len).unwrap();
 
         //ファイル出力
-        let mut file=File::create(o_file_name).context("Failed open jpeg file")?        
+        let mut file=File::create(o_file_name).context("Failed open jpeg file")?;       
         file.write_all(&out).context("Failed output jpeg file")?;
 
         Ok(())
         
 
     }
-    // pub fn encode_file(&mut self,img_data: &[u8]){
-    //     self.vfrmbuf.buf.write_to_buf(&img_data).unwrap();
 
-    //     self.adma.s2mm_start();
-    //     self.vfrmbuf.start();
-    //     self.adma.set_s2mm_length(0x200000);
-
-    //     while !self.adma.is_idle(){}
-
-    //     let out = self.adma.buf.buf.clone();
-
-    // }
 }
