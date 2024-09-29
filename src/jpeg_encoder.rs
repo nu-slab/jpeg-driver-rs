@@ -1,8 +1,17 @@
+use crate::uio::Uio;
 use crate::axidma::Adma;
 use crate::vfrmbuf::Vfb;
+use xipdriver_rs::json_as_map;
+use xipdriver_rs::json_as_str;
+use xipdriver_rs::json_as_u32;
 use anyhow::{anyhow, Result, Context};
+use std::fs::File;
+use std::io::Write;
+
+const PAGE_SIZE:usize = 0x1000;
 
 pub struct JpegEncoder{
+    pub uio:Uio,
     pub vfrmbuf:Vfb,
     pub adma:Adma
     
@@ -13,12 +22,20 @@ pub struct JpegEncoder{
 impl JpegEncoder{
     pub fn new(hw_json_path:&str) -> Result<Self>{
         //ハードウェア情報の読み込み
-        println!("hw json");
         let hw_json = xipdriver_rs::hwinfo::read(hw_json_path)?;
 
         let jpeg_hier = "jpeg_encoder";
 
         //ハードウェア名を取得
+        let jpeg_uio_name = xipdriver_rs::hwinfo::match_hw(
+            &hw_json,
+            jpeg_hier,
+            "jpeg_encoder"
+        )?;
+            
+        let uio_obj = json_as_map!(hw_json[jpeg_uio_name]);
+        let uio_name = json_as_str!(uio_obj["uio"]);     
+        
         let jpeg_vfbr_name = xipdriver_rs::hwinfo::match_hw(
             &hw_json,
             jpeg_hier,
@@ -29,14 +46,18 @@ impl JpegEncoder{
             jpeg_hier,
             "axi_dma"
         )?;
-        println!("vfrmbuf");
+        
+        //uioをオープン
+        let mut uio = Uio::new(&uio_name,PAGE_SIZE)?;
+
         //video frame buffer をオープン
         let mut vfrmbuf =  Vfb::new(&hw_json[jpeg_vfbr_name])?;
-        println!("AXI DMA");
+
         //AXI DMAをオープン
         let mut adma = Adma::new(&hw_json[jpeg_dma_name])?;
 
         Ok(JpegEncoder{
+            uio,
             vfrmbuf,
             adma
         })
@@ -60,11 +81,34 @@ impl JpegEncoder{
 
         while !self.adma.is_idle(){}
 
+        let len = self.uio.read_mem32(0x10) as usize;
         
-        Ok(self.adma.buf.read_from_buf(0x200000).unwrap())
+        Ok(self.adma.buf.read_from_buf(len).unwrap())
 
     }
 
+
+    pub fn encode_file(&mut self,img_data: &[u8],o_file_name:&str)->Result<()>{
+        //self.vfrmbuf.buf.write_to_buf(&img_data).unwrap();
+
+        self.adma.start()?;
+        self.vfrmbuf.start(&img_data)?;
+        self.adma.set_s2mm_length(0x200000);
+
+        while !self.adma.is_idle(){}
+
+        let len = self.uio.read_mem32(0x04) as usize;
+        println!("len:{}",len);
+        let out = self.adma.buf.read_from_buf(len).unwrap();
+
+        //ファイル出力
+        let mut file=File::create(o_file_name).context("Failed open jpeg file")?        
+        file.write_all(&out).context("Failed output jpeg file")?;
+
+        Ok(())
+        
+
+    }
     // pub fn encode_file(&mut self,img_data: &[u8]){
     //     self.vfrmbuf.buf.write_to_buf(&img_data).unwrap();
 

@@ -96,46 +96,47 @@ fn main() -> Result<()> {
     //buf_vfrmbuf.write_to_buf(&data).unwrap();
     
     driver.config();
-    driver.encode(&data);
+    //driver.encode(&data);
+    driver.encode_file(&data,"output.jpg")?;
     
 
-    let filename = "/dev/uio5".to_string();
-    let c_filename = CString::new(filename).unwrap();
-    let fd = unsafe { open(c_filename.as_ptr(), O_RDWR) };
-        if fd < 0 {
-            return Err(anyhow::Error::from(std::io::Error::last_os_error()));
-        }
+    // let filename = "/dev/uio5".to_string();
+    // let c_filename = CString::new(filename).unwrap();
+    // let fd = unsafe { open(c_filename.as_ptr(), O_RDWR) };
+    //     if fd < 0 {
+    //         return Err(anyhow::Error::from(std::io::Error::last_os_error()));
+    //     }
 
-        let mem = unsafe {
-            mmap(
-                ptr::null_mut(),
-                PAGE_SIZE,
-                PROT_READ | PROT_WRITE,
-                MAP_SHARED,
-                fd,
-                0,
-            )
-        };
+    //     let mem = unsafe {
+    //         mmap(
+    //             ptr::null_mut(),
+    //             PAGE_SIZE,
+    //             PROT_READ | PROT_WRITE,
+    //             MAP_SHARED,
+    //             fd,
+    //             0,
+    //         )
+    //     };
 
-        if mem == libc::MAP_FAILED {
-            unsafe { close(fd) };
-            return Err(anyhow::Error::from(std::io::Error::last_os_error()));
-        }
+    //     if mem == libc::MAP_FAILED {
+    //         unsafe { close(fd) };
+    //         return Err(anyhow::Error::from(std::io::Error::last_os_error()));
+    //     }
 
 
-    unsafe {
-        let ptr = mem.add(0x04) as * const u32;
-        let hoge = ptr::read_volatile(ptr);
-        //println!("{:x}",hoge);
-        let out = driver.adma.buf.read_from_buf(hoge as usize).unwrap();
-        //let out :Vec<u8> = vec![10;10];
+    // unsafe {
+    //     let ptr = mem.add(0x04) as * const u32;
+    //     let hoge = ptr::read_volatile(ptr);
+    //     //println!("{:x}",hoge);
+    //     let out = driver.adma.buf.read_from_buf(hoge as usize).unwrap();
+    //     //let out :Vec<u8> = vec![10;10];
 
-        println!("Buffer size:{}",out.len());
-        let mut F = File::create("output.jpg")?;
+    //     println!("Buffer size:{}",out.len());
+    //     let mut F = File::create("output.jpg")?;
         
-        F.write_all(&out)?;
-        //F.flush()?;
-    }
+    //     F.write_all(&out)?;
+    //     //F.flush()?;
+    // }
     
     
     //driver.adma.buf.write_jpeg_to_file("output.jpg").unwrap();

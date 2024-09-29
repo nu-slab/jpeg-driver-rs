@@ -8,6 +8,7 @@ use serde::{Serialize, Deserialize};
 use anyhow::{anyhow, Result, Context};
 
 use crate::udma::{Udma,Owner};
+use crate::uio::Uio;
 
 use xipdriver_rs::json_as_map;
 use xipdriver_rs::json_as_str;
@@ -26,8 +27,9 @@ const FRMBUF_P1BUFFER: usize = 0x0030;
 
 // vfb_t 構造体のRust版
 pub struct Vfb {
-    fd: RawFd,
-    mem: *mut u32,
+    // fd: RawFd,
+    // mem: *mut u32,
+    pub uio:Uio,
     pub buf:Udma
 }
 
@@ -40,37 +42,39 @@ impl Vfb {
         let udmabuf_name = json_as_str!(hw_object["udmabuf"][0]);
 
         //uioをオープン
-        let dev_name = Vfb::check_vfrmbuf_uio_num(uio_name)?;
-        let filename = format!("/dev/{}", dev_name);
-        let c_filename = CString::new(filename).unwrap();
+        //let dev_name = Vfb::check_vfrmbuf_uio_num(uio_name)?;
+        let uio = Uio::new(&uio_name,PAGE_SIZE)?;
+        // let filename = format!("/dev/{}", dev_name);
+        // let c_filename = CString::new(filename).unwrap();
 
-        let fd = unsafe { open(c_filename.as_ptr(), O_RDWR) };
-        if fd < 0 {
-            return Err(anyhow::Error::from(std::io::Error::last_os_error()));
-        }
+        // let fd = unsafe { open(c_filename.as_ptr(), O_RDWR) };
+        // if fd < 0 {
+        //     return Err(anyhow::Error::from(std::io::Error::last_os_error()));
+        // }
 
-        let mem = unsafe {
-            mmap(
-                ptr::null_mut(),
-                PAGE_SIZE,
-                PROT_READ | PROT_WRITE,
-                MAP_SHARED,
-                fd,
-                0,
-            )
-        };
+        // let mem = unsafe {
+        //     mmap(
+        //         ptr::null_mut(),
+        //         PAGE_SIZE,
+        //         PROT_READ | PROT_WRITE,
+        //         MAP_SHARED,
+        //         fd,
+        //         0,
+        //     )
+        // };
 
-        if mem == libc::MAP_FAILED {
-            unsafe { close(fd) };
-            return Err(anyhow::Error::from(std::io::Error::last_os_error()));
-        }
+        // if mem == libc::MAP_FAILED {
+        //     unsafe { close(fd) };
+        //     return Err(anyhow::Error::from(std::io::Error::last_os_error()));
+        // }
 
         //u-dma-bufferをオープン
         let mut udmabuf = Udma::new(udmabuf_name)?;
         
         Ok(Vfb {
-            fd,
-            mem: mem as *mut u32,
+            // fd,
+            // mem: mem as *mut u32,
+            uio: uio,
             buf: udmabuf
         })
 
@@ -112,22 +116,26 @@ impl Vfb {
 
     /// メモリとファイルディスクリプタをクローズ
     pub fn close(&self) {
-        unsafe {
-            munmap(self.mem as *mut libc::c_void, PAGE_SIZE);
-            libc::close(self.fd);
-        }
+        // unsafe {
+        //     munmap(self.mem as *mut libc::c_void, PAGE_SIZE);
+        //     libc::close(self.fd);
+        // }
+        self.uio.close();
+        self.buf.close();
     }
 
     /// メモリに値を書き込み
     fn write_mem32(&self, addr: usize, val: u32) {
-        unsafe {
-            ptr::write_volatile(self.mem.add(addr / 4), val);
-        }
+        // unsafe {
+        //     ptr::write_volatile(self.mem.add(addr / 4), val);
+        // }
+        self.uio.write_mem32(addr,val);
     }
 
     /// メモリから値を読み取り
     fn read_mem32(&self, addr: usize) -> u32 {
-        unsafe { ptr::read_volatile(self.mem.add(addr / 4)) }
+        // unsafe { ptr::read_volatile(self.mem.add(addr / 4)) }
+        self.uio.read_mem32(addr)
     }
 
     /// デバイスの名前を探す
@@ -151,6 +159,7 @@ impl Vfb {
 
         Err(io::Error::new(io::ErrorKind::NotFound, "no uio device found"))
     }
+    
 
     /// 物理アドレスを設定
     // pub fn set_phys_addr(&self, udmabuf_phys_addr: u32) {
@@ -211,11 +220,9 @@ impl Vfb {
 
     pub fn start(&mut self,img_buffer:&[u8]) -> Result<()>{
         //画像データをバッファに書き込み
-        print!("vfrmbuf:");
         self.buf.write_to_buf(&img_buffer)?;
 
         //ownerをDevice(PL)にする
-        print!("vfrmbuf2:");
         self.buf.change_owner(Owner::Device)?;
 
         self.write_start();

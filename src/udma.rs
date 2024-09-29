@@ -35,7 +35,6 @@ pub struct Udma {
     pub size: usize,
 
     pub sync_direction: File,
-    pub sync_owner: File,
     pub sync_for_cpu: File,
     pub sync_for_device: File,
 }
@@ -80,9 +79,6 @@ impl Udma {
         let direction_path = Path::new(&direction_name);
         let mut sync_direction = File::create(direction_path)?;
         
-        let so_name = format!("/sys/class/u-dma-buf/{}/sync_owner", buf_name);
-        let so_path = Path::new(&so_name);
-        let mut sync_owner = File::open(so_path)?;
         
         let sfc_name = format!("/sys/class/u-dma-buf/{}/sync_for_cpu", buf_name);
         let sfc_path = Path::new(&sfc_name);
@@ -100,7 +96,6 @@ impl Udma {
             phys_addr,
             size,
             sync_direction,
-            sync_owner,
             sync_for_cpu,
             sync_for_device,
         })
@@ -145,16 +140,16 @@ impl Udma {
 
     //現在のバッファのオーナーを読み取り
     fn get_owner(&mut self) -> Result<Owner>{
+        let so_name = format!("/sys/class/u-dma-buf/{}/sync_owner", self.name);
+        let so_path = Path::new(&so_name);
+        let mut sync_owner = File::open(so_path)?;
+        
         let mut attr = String::new();
-        self.sync_owner.read_to_string(&mut attr).context("Failed to read sync_owner file")?;
-        println!("piyo");
-        println!("{}",attr);
-        println!("{}",attr.trim());
-        dbg!(attr.trim());
-        dbg!(attr.trim().parse::<u8>());
+        sync_owner.read_to_string(&mut attr).context("Failed to read sync_owner file")?;
+
         let owner_value = attr.trim().parse::<u32>().context("Failed to parse owner as u32")?;
         let owner = Owner::from(owner_value);
-        println!("complete");
+        
         Ok(owner)
     }
  
@@ -175,12 +170,11 @@ impl Udma {
             write!(self.sync_for_cpu,"{}",1 as u8)
                 .context("Failed to write to sync_for_cpu")?;
         }
-        println!("hoge");
-        // let ow = self.get_owner()?;
-        // //オーナーが変わっているか確認
-        // if owner != ow{
-        //     return Err(anyhow::Error::msg("Failed to change owner"));
-        // }
+        let ow = self.get_owner()?;
+        //オーナーが変わっているか確認
+        if owner != ow{
+            return Err(anyhow::Error::msg("Failed to change owner"));
+        }
         Ok(())
     }
     
@@ -193,7 +187,6 @@ impl Udma {
         }
 
         //ownerをCPUにする
-        print!("write");
         self.change_owner(Owner::Cpu)?;
 
         unsafe {
@@ -215,7 +208,7 @@ impl Udma {
         //ownerをCPUにする
         //self.get_owner()?;
         self.change_owner(Owner::Cpu)?;
-        self.get_owner()?;
+        
         unsafe {
                     // self.bufがNULLポインタでないことを確認
             assert!(!self.buf.is_null(), "Buffer pointer is null");
