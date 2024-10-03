@@ -6,6 +6,7 @@ use std::ptr;
 use std::os::unix::io::RawFd;
 use serde::{Serialize, Deserialize};
 use anyhow::{anyhow, Result, Context};
+use log::info;
 
 use crate::udma::{Udma,Owner};
 use crate::uio::Uio;
@@ -40,11 +41,11 @@ impl Vfb {
         let hw_object = json_as_map!(hw_info);
         let uio_name = json_as_str!(hw_object["uio"]);
         let udmabuf_name = json_as_str!(hw_object["udmabuf"][0]);
-
+        
         //uioをオープン
         //let dev_name = Vfb::check_vfrmbuf_uio_num(uio_name)?;
         let uio = Uio::new(&uio_name,PAGE_SIZE)?;
-
+        
         //u-dma-bufferをオープン
         let mut udmabuf = Udma::new(udmabuf_name)?;
         

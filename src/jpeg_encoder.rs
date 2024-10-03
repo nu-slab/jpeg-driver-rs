@@ -5,6 +5,7 @@ use xipdriver_rs::json_as_map;
 use xipdriver_rs::json_as_str;
 use xipdriver_rs::json_as_u32;
 use anyhow::{anyhow, Result, Context};
+use log::info;
 use std::fs::File;
 use std::io::Write;
 
@@ -31,7 +32,8 @@ impl JpegEncoder{
             &hw_json,
             jpeg_hier,
             "jpeg_encoder"
-        )?;            
+        )?;        
+        
         let uio_obj = json_as_map!(hw_json[jpeg_uio_name]);
         let uio_name = json_as_str!(uio_obj["uio"]);     
         
@@ -40,6 +42,7 @@ impl JpegEncoder{
             jpeg_hier,
             "v_frmbuf_rd"
         )?;
+        
         let jpeg_dma_name = xipdriver_rs::hwinfo::match_hw(
             &hw_json,
             jpeg_hier,

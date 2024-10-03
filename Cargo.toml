@@ -1,11 +1,12 @@
 [package]
-name = "jpeg_driver-rs"
+name = "jpeg_driver_rs"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 anyhow = "1.0.89"
 libc = "0.2.158"
+log = "0.4.22"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
 xipdriver-rs = { git = "https://github.com/nu-slab/xipdriver-rs.git" }

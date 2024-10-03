@@ -5,8 +5,13 @@ use std::fs::File;
 use std::io::{self, Read,Write};
 use std::ptr;
 use std::os::unix::io::RawFd;
+use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::{Arc,Mutex};
 use anyhow::{anyhow, Result, Context};
 use std::path::Path;
+use log::info;
+
+//use std::sync::atomic::{AtomicPtr, Ordering};
 
 //u-dma-bufのOwner
 #[derive(PartialEq,Clone,Copy)]
@@ -30,7 +35,8 @@ impl From<u32> for Owner {
 pub struct Udma {
     pub name: String,
     pub fd: RawFd,
-    pub buf: *mut u8,
+    //pub buf: *mut u8,
+    pub buf: Arc<Mutex<AtomicPtr<u8>>>,  // Arc<Mutex<AtomicPtr<u32>>>でスレッド間共有を可能に
     pub phys_addr: u32,
     pub size: usize,
 
@@ -45,9 +51,10 @@ impl Udma {
     }
     
     pub fn open(buf_name: &str) -> Result<Self> {
+        info!("{}",buf_name);
         let phys_addr = Udma::get_phys_addr(buf_name)?;
         let size = Udma::get_udma_size(buf_name)?;
-
+        
         let filename = format!("/dev/{}", buf_name);
         let c_filename = CString::new(filename).unwrap();
 
@@ -56,7 +63,7 @@ impl Udma {
         if fd < 0 {
             return Err(anyhow::Error::from(std::io::Error::last_os_error()));
        } 
-
+        
         let buf = unsafe {
             mmap(
                 ptr::null_mut(),
@@ -78,8 +85,16 @@ impl Udma {
         let direction_name = format!("/sys/class/u-dma-buf/{}/sync_direction", buf_name);
         let direction_path = Path::new(&direction_name);
         let mut sync_direction = File::create(direction_path)?;
-        
-        
+
+        // let mut sync_direction = match File::create(direction_path)
+        // {
+        //     Ok(name) => name,  // 成功時はそのまま返す
+        //     Err(e) => {
+        //     info!("Error occurred: {}", e);  // エラー時にログを出力
+        //     return Err(anyhow::Error::new(e));  // std::io::Errorをanyhow::Errorに変換して返す
+        //     }
+        // };
+
         let sfc_name = format!("/sys/class/u-dma-buf/{}/sync_for_cpu", buf_name);
         let sfc_path = Path::new(&sfc_name);
         let mut sync_for_cpu = File::create(sfc_path)?;
@@ -88,11 +103,11 @@ impl Udma {
         let sfd_path = Path::new(&sfd_name);
         let mut sync_for_device = File::create(sfd_path)?;
         
-
         Ok(Udma {
             name: buf_name.to_string(),
             fd,
-            buf: buf as *mut u8,
+            //buf: buf as *mut u8,
+            buf:Arc::new(Mutex::new(AtomicPtr::new(buf as *mut u8))),
             phys_addr,
             size,
             sync_direction,
@@ -102,8 +117,9 @@ impl Udma {
     }
 
     pub fn close(&self) {
+        let buf= self.buf.lock().unwrap();
         unsafe {
-            munmap(self.buf as *mut libc::c_void, self.size);
+            munmap(buf.load(Ordering::SeqCst) as *mut libc::c_void, self.size);
             close(self.fd);
         }
     }
@@ -189,9 +205,11 @@ impl Udma {
         //ownerをCPUにする
         self.change_owner(Owner::Cpu)?;
 
+        let buf = self.buf.lock().unwrap();
+
         unsafe {
             // `copy_nonoverlapping` を使ってデータをコピー
-            ptr::copy_nonoverlapping(data.as_ptr(), self.buf, data_len);
+            ptr::copy_nonoverlapping(data.as_ptr(), buf.load(Ordering::SeqCst), data_len);
         }
 
         Ok(())
@@ -208,15 +226,12 @@ impl Udma {
         //ownerをCPUにする
         //self.get_owner()?;
         self.change_owner(Owner::Cpu)?;
+
+        let buf = self.buf.lock().unwrap();
         
         unsafe {
-                    // self.bufがNULLポインタでないことを確認
-            assert!(!self.buf.is_null(), "Buffer pointer is null");
-
-            // コピー先のデータが適切なサイズであることを確認
-            assert!(data.len() >= len, "Destination buffer is too small");
             // `copy_nonoverlapping` を使って `buf` からデータを読み出す
-            ptr::copy_nonoverlapping(self.buf, data.as_mut_ptr(), len);
+            ptr::copy_nonoverlapping(buf.load(Ordering::SeqCst), data.as_mut_ptr(), len);
         }
 
         Ok(data)
@@ -224,69 +239,7 @@ impl Udma {
 
 
 
-    /// `self.buf` からJPEGデータを読み込み、エンドマーカーを見つけたら書き出す
-    pub fn write_jpeg(&mut self, filename: &str) -> io::Result<()> {
-        let mut file = File::create(filename)?;
-        let mut bytes_written = 0;
 
-        while bytes_written < self.size {
-            // 1バイトずつデータを確認
-            let current_byte = unsafe { *self.buf.add(bytes_written) };
-            let next_byte = if bytes_written + 1 < self.size {
-                unsafe { *self.buf.add(bytes_written + 1) }
-            } else {
-                0
-            };
-
-            // エンドマーカー (0xFF, 0xD9) を確認
-            if current_byte == 0xFF && next_byte == 0xD9 {
-                // エンドマーカーまでのデータを読み込んで書き出し
-                let data = self.read_from_buf(bytes_written + 2).map_err(|_| {
-                    io::Error::new(io::ErrorKind::Other, "Failed to read from mmap buffer")
-                })?;
-                file.write_all(&data)?;
-                break;
-            }
-
-            bytes_written += 1;
-        }
-
-        Ok(())
-    }
-
-
-
-    pub fn write_jpeg_to_file(&mut self, filename: &str) -> io::Result<()> {
-    let mut file = File::create(filename)?;
-    let mut bytes_written = 0;
-    let mut count = 0;
-    let size = self.size;
-
-    while bytes_written < size {
-
-        // データを書き込み
-        let write_data = unsafe { ptr::read_volatile(self.buf.wrapping_add(bytes_written) )};
-        let written = file.write(&[write_data])?;
-        if written != 1 {
-            return Err(io::Error::new(
-                io::ErrorKind::WriteZero,
-                "Error writing to file",
-            ));
-        }
-
-        bytes_written += written;
-        count += 1;
-
-        // JPEGの終了マーカー (0xFF, 0xD9) を確認
-        let data = unsafe { ptr::read_volatile(self.buf.wrapping_add(bytes_written) )};
-        let next_data = unsafe { ptr::read_volatile(self.buf.wrapping_add(bytes_written+1) )};
-        if bytes_written + 1 < size && data == 0xFF && next_data == 0xD9 {
-            break; // マーカーが見つかったら書き込みを停止
-        }
-    }
-
-    Ok(())
-}
 
 }
 
